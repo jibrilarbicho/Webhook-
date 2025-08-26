@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 const app = express();
+import webhookRoute from "./routes/webhookroute.js";
 app.use(
   express.json({
     verify: (req, res, buffer) => {
@@ -20,5 +21,6 @@ app.use(
     ],
   })
 );
+app.use("/api/v1", webhookRoute);
 
 export default app;
