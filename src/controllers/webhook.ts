@@ -1,24 +1,30 @@
-import { Request, Response } from "express";
-import crypto from "crypto";
+import { Request, Response, NextFunction } from "express";
+import crypto, { sign } from "crypto";
+import { ApiError } from "../middlewares/apierror.js";
 
 const YAYA_SECRET = process.env.YAYA_SECRET || "test_key_1234567890";
 
 export const yayawebhook = async (
   req: Request,
-  res: Response
+  res: Response,
+  next: NextFunction
 ): Promise<any> => {
   try {
-    const signature = req.header["YAYA-SIGNATURE"];
-    const rawBody = (req as any).rawBody;
+    const signature = req.headers["yaya-signature"] as string;
+    console.log("signature", signature);
+    const payload = req.body;
 
-    if (!signature || !rawBody) {
-      return res.status(400).json({ error: "Missing signature or body" });
+    if (!signature || !payload) {
+      throw new ApiError(400, "Missing signature or body");
     }
+
+    const signedPayload = Object.values(payload).join("");
 
     const expectedSignature = await crypto
       .createHmac("sha256", YAYA_SECRET)
-      .update(rawBody)
+      .update(signedPayload)
       .digest("hex");
+    console.log("expectedSignature", expectedSignature);
 
     if (
       !crypto.timingSafeEqual(
@@ -26,14 +32,25 @@ export const yayawebhook = async (
         Buffer.from(expectedSignature, "utf8")
       )
     ) {
-      return res.status(400).json({ error: "Invalid signature" });
+      throw new ApiError(400, "Invalid signature");
     }
 
-    res.sendStatus(200);
-
-    console.log("Verified event:", req.body);
+    return res.status(200).json({
+      status: "success",
+      message: "Webhook received and verified",
+      event: {
+        id: payload.id,
+        amount: payload.amount,
+        currency: payload.currency,
+        cause: payload.cause,
+        account_name: payload.account_name,
+      },
+    });
   } catch (err) {
     console.error("Webhook error:", err);
-    res.sendStatus(500);
+    if (err instanceof ApiError) {
+      next(err);
+    }
+    next(new ApiError(500, "Internal Server Error"));
   }
 };
